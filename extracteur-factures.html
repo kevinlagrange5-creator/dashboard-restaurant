@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extracteur Factures</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0d10;--s1:#141619;--s2:#1a1d22;--s3:#202330;
+  --b1:#252830;--b2:#2e3240;
+  --txt:#e0e2ea;--muted:#5a6070;--muted2:#8090a0;
+  --green:#6effa0;--yellow:#d4f57a;--red:#ff6070;--orange:#f0a030;--blue:#60a0f0;
+  --mono:'DM Mono',monospace;--display:'Syne',sans-serif;
+}
+body{font-family:var(--display);background:var(--bg);color:var(--txt);min-height:100vh;padding:32px 20px 60px;display:flex;flex-direction:column;align-items:center}
+.hdr{width:100%;max-width:700px;display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--b1)}
+.hdr-title{font-size:20px;font-weight:800;letter-spacing:-.3px}
+.hdr-title span{color:var(--yellow)}
+.hdr-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px}
+.step-pill{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--b1);border-radius:4px;padding:4px 10px}
+.card{width:100%;max-width:700px;background:var(--s1);border:1px solid var(--b1);border-radius:14px;padding:24px;margin-bottom:14px}
+.card-label{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.api-row{display:flex;gap:8px}
+.api-row input{flex:1;background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:10px 14px;color:var(--txt);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .2s}
+.api-row input:focus{border-color:var(--yellow)}
+.api-row input::placeholder{color:var(--muted)}
+.btn-sec{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:10px 14px;color:var(--txt);font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap;transition:border-color .2s,color .2s}
+.btn-sec:hover{border-color:var(--yellow);color:var(--yellow)}
+.api-status{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;height:16px}
+.api-status.ok{color:var(--green)}
+.api-status.err{color:var(--red)}
+.drop{border:1.5px dashed var(--b2);border-radius:12px;padding:36px 20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative;background:var(--s2);margin-bottom:14px}
+.drop:hover,.drop.drag{border-color:var(--yellow);background:rgba(212,245,122,.03)}
+.drop.ready{border-color:var(--green);border-style:solid}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:30px;margin-bottom:8px}
+.drop-title{font-size:14px;font-weight:700;margin-bottom:4px}
+.drop-hint{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.file-pills{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px}
+.file-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(110,255,160,.08);border:1px solid rgba(110,255,160,.25);border-radius:20px;padding:3px 10px;font-family:var(--mono);font-size:10px;color:var(--green)}
+.btn-main{width:100%;background:var(--yellow);color:#0c0d10;border:none;border-radius:10px;padding:14px;font-family:var(--display);font-size:15px;font-weight:800;cursor:pointer;transition:opacity .2s}
+.btn-main:hover{opacity:.88}
+.btn-main:disabled{opacity:.3;cursor:not-allowed}
+.prog-wrap{height:3px;background:var(--b1);border-radius:2px;margin-top:12px;overflow:hidden;display:none}
+.prog-wrap.show{display:block}
+.prog-bar{height:100%;background:var(--yellow);border-radius:2px;transition:width .4s ease;width:0%}
+.prog-lbl{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;min-height:16px;display:none}
+.prog-lbl.show{display:block}
+.spinner{width:12px;height:12px;border:2px solid var(--b2);border-top-color:var(--yellow);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{display:none;align-items:center;gap:8px;padding:10px 14px;border-radius:8px;font-family:var(--mono);font-size:11px;margin-top:12px;line-height:1.5}
+.toast.show{display:flex}
+.toast.err{background:rgba(255,96,112,.07);border:1px solid rgba(255,96,112,.2);color:var(--red)}
+.toast.ok{background:rgba(110,255,160,.07);border:1px solid rgba(110,255,160,.2);color:var(--green)}
+.results-card{display:none}
+.results-card.show{display:block}
+.summary-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.sc{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:12px 14px}
+.sc .lbl{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.sc .val{font-family:var(--mono);font-size:13px;color:var(--txt);font-weight:500;word-break:break-all}
+.sc .val.big{font-size:18px;color:var(--yellow)}
+.sc .val.pay{color:var(--orange)}
+.sc .val.paid{color:var(--green)}
+.sc .val.late{color:var(--red)}
+.tbl-wrap{overflow-x:auto;margin:0 -24px;padding:0 24px}
+table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+thead tr{border-bottom:1px solid var(--b1)}
+th{padding:8px 10px;text-align:left;font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:400;white-space:nowrap}
+th.r,td.r{text-align:right}
+tbody tr{border-bottom:1px solid rgba(255,255,255,.03);transition:background .1s}
+tbody tr:hover{background:var(--s2)}
+td{padding:9px 10px;color:var(--txt)}
+td.nm{font-family:var(--display);font-size:12px;font-weight:700}
+td.mu{color:var(--muted2)}
+td.hl{color:var(--yellow);font-weight:500}
+.json-toggle{font-family:var(--mono);font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin:14px 0 6px;display:block;padding:0}
+.json-toggle:hover{color:var(--txt)}
+.json-block{display:none;background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;font-family:var(--mono);font-size:11px;color:#7dd3fc;white-space:pre-wrap;word-break:break-word;line-height:1.7;max-height:200px;overflow-y:auto}
+.json-block.show{display:block}
+.hist-item{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:9px 12px;border-radius:8px;border:1px solid var(--b1);margin-bottom:6px;background:var(--s2);font-family:var(--mono);font-size:11px;cursor:pointer;transition:border-color .15s}
+.hist-item:hover{border-color:var(--b2)}
+.hist-sup{color:var(--txt);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-cat{color:var(--muted);font-size:10px}
+.hist-amt{color:var(--yellow);white-space:nowrap}
+.hist-date{color:var(--muted);font-size:10px;white-space:nowrap}
+.hist-empty{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:20px 0}
+.row{display:flex;gap:8px;margin-top:14px}
+.btn-row{flex:1;padding:10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--muted2);cursor:pointer;transition:border-color .2s,color .2s;text-align:center}
+.btn-row:hover{border-color:var(--yellow);color:var(--yellow)}
+.btn-exp{font-family:var(--mono);font-size:10px;padding:5px 10px;background:transparent;border:1px solid var(--b1);border-radius:4px;color:var(--muted);cursor:pointer;transition:color .2s,border-color .2s}
+.btn-exp:hover{color:var(--green);border-color:var(--green)}
+.footer{font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.8;max-width:700px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <div class="hdr-title">Extracteur <span>Factures</span></div>
+    <div class="hdr-sub">PDF → Google Sheets via Claude API</div>
+  </div>
+  <div class="step-pill">étape 1 / 3</div>
+</div>
+
+<div class="card">
+  <div class="card-label">Clé API Anthropic</div>
+  <div class="api-row">
+    <input type="password" id="inp-key" placeholder="sk-ant-api03-..." autocomplete="off">
+    <button class="btn-sec" onclick="saveKey()">Enregistrer</button>
+    <button class="btn-sec" onclick="clearKey()">✕</button>
+  </div>
+  <div class="api-status" id="api-status">Clé non configurée</div>
+</div>
+
+<div class="card">
+  <div class="card-label">Déposer les factures</div>
+  <div class="drop" id="drop">
+    <input type="file" accept=".pdf" id="inp-file" multiple>
+    <div class="drop-icon">📄</div>
+    <div class="drop-title">Glisser une ou plusieurs factures PDF</div>
+    <div class="drop-hint">ou cliquer pour sélectionner</div>
+    <div class="file-pills" id="file-pills"></div>
+  </div>
+  <button class="btn-main" id="btn-main" disabled onclick="startExtraction()">Extraire les données</button>
+  <div class="prog-wrap" id="prog-wrap"><div class="prog-bar" id="prog-bar"></div></div>
+  <div class="prog-lbl" id="prog-lbl"></div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<div class="card results-card" id="results-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="card-label" style="margin:0">Dernière facture extraite</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-exp" onclick="copyJSON()">Copier JSON</button>
+      <button class="btn-exp" onclick="newExtraction()">+ Nouvelle</button>
+    </div>
+  </div>
+  <div class="summary-row" id="summary-row"></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Produit</th><th>Réf.</th><th class="r">Qté</th><th>Unité</th>
+          <th class="r">Prix unit. HT</th><th class="r">Total HT</th><th class="r">TVA %</th><th>Catégorie</th>
+        </tr>
+      </thead>
+      <tbody id="prod-tbody"></tbody>
+    </table>
+  </div>
+  <button class="json-toggle" id="json-toggle" onclick="toggleJSON()">▸ Voir le JSON brut</button>
+  <pre class="json-block" id="json-block"></pre>
+</div>
+
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <div class="card-label" style="margin:0">Historique de session</div>
+    <button class="btn-exp" onclick="exportCSV()">Exporter CSV</button>
+  </div>
+  <div id="hist-list"><div class="hist-empty">Aucune facture traitée dans cette session.</div></div>
+</div>
+
+<div class="footer">
+  Ta clé API reste uniquement dans cette page · Coût ~0.02€/facture · Sauvegarde automatique Google Sheets
+</div>
+
+<script>
+const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwwcPiEa0tLlB8orMQjlCXsSeYkPCRcm0L4zDNkeROGFKeHQ_07W9nyy51rmAeyFDb90g/exec';
+const MODEL = 'claude-sonnet-4-6';
+
+let apiKey = '';
+let queue = [];
+let lastData = null;
+let sessionHistory = [];
+let jsonOpen = false;
+
+// ── File drop ──────────────────────────────────────────────────────
+const dropEl = document.getElementById('drop');
+const fileInput = document.getElementById('inp-file');
+
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+dropEl.addEventListener('drop', e => { e.preventDefault(); dropEl.classList.remove('drag'); loadFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', () => { if (fileInput.files.length) loadFiles(fileInput.files); });
+
+function loadFiles(fileList) {
+  const pdfs = Array.from(fileList).filter(f => f.type === 'application/pdf');
+  if (!pdfs.length) { toast('err', 'Veuillez sélectionner des fichiers PDF.'); return; }
+
+  queue = [];
+  dropEl.classList.remove('ready');
+  document.getElementById('file-pills').innerHTML = '<div class="file-pill"><span class="spinner"></span>Chargement...</div>';
+  document.getElementById('btn-main').disabled = true;
+
+  Promise.all(pdfs.map(f => readFileAsB64(f)))
+    .then(results => {
+      queue = results.filter(r => r.b64 && r.b64.length > 100);
+      if (!queue.length) { toast('err', 'Fichiers invalides ou vides.'); return; }
+      document.getElementById('file-pills').innerHTML = queue.map(f => `<div class="file-pill">📎 ${f.name}</div>`).join('');
+      dropEl.classList.add('ready');
+      if (apiKey) document.getElementById('btn-main').disabled = false;
+    })
+    .catch(err => toast('err', 'Erreur lecture : ' + err.message));
+}
+
+function readFileAsB64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve({ name: file.name, b64: e.target.result.split(',')[1] });
+    reader.onerror = () => reject(new Error(file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── API Key ────────────────────────────────────────────────────────
+function saveKey() {
+  const v = document.getElementById('inp-key').value.trim();
+  if (!v.startsWith('sk-ant')) { setStatus('Format invalide (doit commencer par sk-ant...)', 'err'); return; }
+  apiKey = v;
+  document.getElementById('inp-key').value = '●'.repeat(22);
+  setStatus('✓ Clé enregistrée', 'ok');
+  if (queue.length) document.getElementById('btn-main').disabled = false;
+}
+
+function clearKey() {
+  apiKey = '';
+  document.getElementById('inp-key').value = '';
+  setStatus('Clé effacée', '');
+  document.getElementById('btn-main').disabled = true;
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('api-status');
+  el.textContent = msg;
+  el.className = 'api-status' + (cls ? ' ' + cls : '');
+}
+
+// ── Extraction ─────────────────────────────────────────────────────
+async function startExtraction() {
+  if (!apiKey || !queue.length) return;
+  document.getElementById('btn-main').disabled = true;
+  clearToast();
+  showProgress(0, '');
+
+  for (let i = 0; i < queue.length; i++) {
+    const file = queue[i];
+    setProgress(Math.round(i / queue.length * 100), `${i+1}/${queue.length} — ${file.name}`);
+    try {
+      const data = await callClaude(file.b64);
+      lastData = data;
+      sessionHistory.push({ ...data, _file: file.name });
+      renderHistory();
+      renderResults(data);
+      saveToSheets(data);
+    } catch(err) {
+      toast('err', `${file.name} : ${err.message}`);
+    }
+    if (i < queue.length - 1) await new Promise(r => setTimeout(r, 700));
+  }
+
+  setProgress(100, `✓ ${queue.length} facture${queue.length > 1 ? 's' : ''} traitée${queue.length > 1 ? 's' : ''} et enregistrées`);
+  document.getElementById('btn-main').disabled = false;
+}
+
+async function callClaude(b64) {
+  const prompt = `Tu es un assistant spécialisé dans l'extraction de données de factures pour un restaurant.
+
+Analyse cette facture PDF et extrais CHAQUE ligne de produit. L'objectif principal est de suivre les prix unitaires dans le temps.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans texte avant ou après :
+
+{
+  "fournisseur": "nom complet du fournisseur",
+  "numero_facture": "numéro de facture",
+  "date_facture": "date d'émission JJ/MM/AAAA",
+  "date_echeance": "date d'échéance JJ/MM/AAAA ou null",
+  "montant_ttc": nombre décimal total,
+  "statut": "À payer, Payé, ou En retard",
+  "produits": [
+    {
+      "nom": "nom exact du produit",
+      "reference": "référence produit ou null",
+      "quantite": nombre décimal,
+      "unite": "kg, L, pièce, carton, etc.",
+      "prix_unitaire_ht": nombre décimal PRIORITAIRE,
+      "total_ht": nombre décimal,
+      "tva_pct": nombre décimal (10, 5.5, 20...),
+      "categorie": "Viande, Poisson, Fruits & Légumes, Produits laitiers, Épicerie, Boissons, Alcools, Fournitures, Énergie, Autre"
+    }
+  ]
+}
+
+Extrais TOUTES les lignes produit. Si prix_unitaire_ht absent, calcule-le (total_ht / quantite). Valeur introuvable = null. JSON uniquement, rien d'autre.`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+        { type: 'text', text: prompt }
+      ]}]
+    })
+  });
+
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    if (res.status === 401) throw new Error('Clé API invalide.');
+    if (res.status === 429) throw new Error('Trop de requêtes — attends quelques secondes.');
+    throw new Error(e.error?.message || `Erreur HTTP ${res.status}`);
+  }
+
+  const resp = await res.json();
+  const raw = resp.content.map(b => b.text || '').join('').trim();
+  const clean = raw.replace(/```json|```/g, '').trim();
+
+  let parsed;
+  try { parsed = JSON.parse(clean); }
+  catch {
+    const m = clean.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('Réponse invalide. Réessaie.');
+    parsed = JSON.parse(m[0]);
+  }
+
+  if (!parsed.produits || !Array.isArray(parsed.produits)) throw new Error('Aucun produit extrait.');
+  return parsed;
+}
+
+// ── Render ─────────────────────────────────────────────────────────
+function renderResults(d) {
+  const scls = d.statut === 'Payé' ? 'paid' : d.statut === 'En retard' ? 'late' : 'pay';
+  document.getElementById('summary-row').innerHTML = [
+    ['Fournisseur', d.fournisseur],
+    ['N° Facture', d.numero_facture],
+    ['Date facture', d.date_facture],
+    ['Échéance', d.date_echeance || '—'],
+    ['Total TTC', d.montant_ttc != null ? d.montant_ttc + ' €' : '—', 'big'],
+    ['Statut', d.statut, scls]
+  ].map(([l,v,c]) => `<div class="sc"><div class="lbl">${l}</div><div class="val${c?' '+c:''}">${v||'—'}</div></div>`).join('');
+
+  document.getElementById('prod-tbody').innerHTML = (d.produits||[]).map(p => `
+    <tr>
+      <td class="nm">${p.nom||'—'}</td>
+      <td class="mu">${p.reference||'—'}</td>
+      <td class="r mu">${p.quantite??'—'}</td>
+      <td class="mu">${p.unite||'—'}</td>
+      <td class="r hl">${p.prix_unitaire_ht!=null?p.prix_unitaire_ht+' €':'—'}</td>
+      <td class="r">${p.total_ht!=null?p.total_ht+' €':'—'}</td>
+      <td class="r mu">${p.tva_pct!=null?p.tva_pct+' %':'—'}</td>
+      <td class="mu">${p.categorie||'—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('json-block').textContent = JSON.stringify(d, null, 2);
+  document.getElementById('results-card').classList.add('show');
+}
+
+// ── Sheets ─────────────────────────────────────────────────────────
+function saveToSheets(data) {
+  fetch(SHEETS_URL, {
+    method: 'POST', mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).catch(e => console.warn('Sheets:', e));
+}
+
+// ── History ────────────────────────────────────────────────────────
+function renderHistory() {
+  const el = document.getElementById('hist-list');
+  if (!sessionHistory.length) { el.innerHTML = '<div class="hist-empty">Aucune facture traitée dans cette session.</div>'; return; }
+  el.innerHTML = [...sessionHistory].reverse().map((item, ri) => {
+    const idx = sessionHistory.length - 1 - ri;
+    const prods = item.produits?.length || 0;
+    return `<div class="hist-item" onclick="showHist(${idx})">
+      <span class="hist-sup">${item.fournisseur||'—'}</span>
+      <span class="hist-cat">${prods} produit${prods>1?'s':''}</span>
+      <span class="hist-amt">${item.montant_ttc!=null?item.montant_ttc+' €':'—'}</span>
+      <span class="hist-date">${item.date_facture||'—'}</span>
+    </div>`;
+  }).join('');
+}
+
+function showHist(idx) {
+  lastData = sessionHistory[idx];
+  renderResults(lastData);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+function showProgress(pct, lbl) {
+  document.getElementById('prog-wrap').classList.add('show');
+  document.getElementById('prog-lbl').classList.add('show');
+  setProgress(pct, lbl);
+}
+
+function setProgress(pct, lbl) {
+  document.getElementById('prog-bar').style.width = pct + '%';
+  const el = document.getElementById('prog-lbl');
+  el.innerHTML = (pct > 0 && pct < 100) ? `<span class="spinner"></span>${lbl}` : lbl;
+}
+
+function toast(type, msg) {
+  const el = document.getElementById('toast');
+  el.className = `toast show ${type}`;
+  el.textContent = msg;
+}
+
+function clearToast() {
+  document.getElementById('toast').className = 'toast';
+}
+
+function toggleJSON() {
+  jsonOpen = !jsonOpen;
+  document.getElementById('json-block').classList.toggle('show', jsonOpen);
+  document.getElementById('json-toggle').textContent = jsonOpen ? '▾ Masquer le JSON brut' : '▸ Voir le JSON brut';
+}
+
+function copyJSON() {
+  if (!lastData) return;
+  navigator.clipboard.writeText(JSON.stringify(lastData, null, 2))
+    .then(() => { toast('ok', 'JSON copié ✓'); setTimeout(clearToast, 2000); })
+    .catch(() => {});
+}
+
+function newExtraction() {
+  document.getElementById('results-card').classList.remove('show');
+  document.getElementById('file-pills').innerHTML = '';
+  fileInput.value = '';
+  document.getElementById('prog-wrap').classList.remove('show');
+  document.getElementById('prog-lbl').classList.remove('show');
+  dropEl.classList.remove('ready');
+  queue = []; lastData = null; jsonOpen = false;
+  document.getElementById('json-block').classList.remove('show');
+  document.getElementById('btn-main').disabled = true;
+  clearToast();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function exportCSV() {
+  if (!sessionHistory.length) return alert('Aucune facture à exporter.');
+  const rows = [['Fournisseur','N° Facture','Date Facture','Produit','Référence','Quantité','Unité','Prix unitaire HT','Total HT','TVA %','Catégorie','Statut']];
+  sessionHistory.forEach(d => {
+    (d.produits||[]).forEach(p => rows.push(
+      [d.fournisseur,d.numero_facture,d.date_facture,p.nom,p.reference,p.quantite,p.unite,p.prix_unitaire_ht,p.total_ht,p.tva_pct,p.categorie,d.statut]
+      .map(v => `"${(v??'').toString().replace(/"/g,'""')}"`)
+    ));
+  });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob(['\uFEFF' + rows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })),
+    download: `factures-${new Date().toISOString().slice(0,10)}.csv`
+  });
+  a.click();
+}
+</script>
+</body>
+</html>
