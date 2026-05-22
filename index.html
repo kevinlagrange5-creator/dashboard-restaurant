@@ -209,6 +209,41 @@ body::before {
 .period-tab.active { background: var(--surface3); color: var(--text); }
 .period-tab:hover:not(.active) { color: var(--muted2); }
 
+.period-control { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+.date-range { display: none; gap: 6px; align-items: center; }
+.date-range.show { display: flex; }
+
+.date-input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  outline: none;
+  color-scheme: dark;
+  transition: border-color .2s;
+}
+
+.date-input:focus { border-color: var(--accent); }
+.date-sep { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+.range-reset {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+.range-reset:hover { color: var(--text); border-color: var(--border2); }
+
 /* KPI grid */
 .kpi-grid {
   display: grid;
@@ -551,10 +586,19 @@ td.accent { color: var(--accent); font-weight: 500; }
           <div class="page-title">Vue <span>d'ensemble</span></div>
           <div class="page-sub" id="overview-sub">Chargement des données...</div>
         </div>
-        <div class="period-tabs">
-          <button class="period-tab active" onclick="setPeriod('all', this)">Tout</button>
-          <button class="period-tab" onclick="setPeriod('month', this)">Ce mois</button>
-          <button class="period-tab" onclick="setPeriod('prev', this)">Mois préc.</button>
+        <div class="period-control">
+          <div class="period-tabs">
+            <button class="period-tab active" onclick="setPeriod('all', this)">Tout</button>
+            <button class="period-tab" onclick="setPeriod('month', this)">Ce mois</button>
+            <button class="period-tab" onclick="setPeriod('prev', this)">Mois préc.</button>
+            <button class="period-tab" onclick="setPeriod('custom', this)">Période</button>
+          </div>
+          <div class="date-range" id="date-range">
+            <input type="date" class="date-input" id="date-start" onchange="applyCustomRange()">
+            <span class="date-sep">→</span>
+            <input type="date" class="date-input" id="date-end" onchange="applyCustomRange()">
+            <button class="range-reset" onclick="resetCustomRange()">↺</button>
+          </div>
         </div>
       </div>
 
@@ -702,6 +746,8 @@ const SHEET_NAME = 'Feuille 1';
 
 let allRows = [];
 let currentPeriod = 'all';
+let customStart = null;
+let customEnd = null;
 
 async function loadData() {
   try {
@@ -736,14 +782,23 @@ async function loadData() {
 
 function getFilteredRows() {
   if (currentPeriod === 'all') return allRows;
+
+  if (currentPeriod === 'custom') {
+    return allRows.filter(r => {
+      const d = parseDate(r['Date facture']);
+      if (!d) return false;
+      if (customStart && d < customStart) return false;
+      if (customEnd && d > customEnd) return false;
+      return true;
+    });
+  }
+
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
   return allRows.filter(r => {
-    if (!r['Date facture']) return false;
-    const parts = r['Date facture'].split('/');
-    if (parts.length < 3) return false;
-    const d = new Date(parts[2], parts[1]-1, parts[0]);
+    const d = parseDate(r['Date facture']);
+    if (!d) return false;
     if (currentPeriod === 'month') return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
     if (currentPeriod === 'prev') {
       const prev = thisMonth === 0 ? 11 : thisMonth - 1;
@@ -768,6 +823,45 @@ function fmtEurDec(n) {
   return new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2}).format(n);
 }
 
+// Parse une date quel que soit le format renvoyé par Google Sheets :
+//  - objet Date JS
+//  - chaine gviz "Date(2026,4,15)" (mois indexé à 0)
+//  - "JJ/MM/AAAA"
+//  - ISO "AAAA-MM-JJ"
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const s = String(v).trim();
+  let m;
+  if ((m = s.match(/^Date\((\d+),\s*(\d+),\s*(\d+)/))) return new Date(+m[1], +m[2], +m[3]);
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/))) {
+    let y = +m[3]; if (y < 100) y += 2000;
+    return new Date(y, +m[2] - 1, +m[1]);
+  }
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return new Date(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+// Clé de tri chronologique "AAAAMMJJ"
+function dateKey(v) {
+  const d = parseDate(v);
+  if (!d) return '';
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Affichage JJ/MM/AAAA
+function fmtDate(v) {
+  const d = parseDate(v);
+  if (!d) return '—';
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+
+// Valeur pour un <input type="date"> (AAAA-MM-JJ)
+function toInputDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function renderAll() {
   const rows = getFilteredRows();
 
@@ -784,9 +878,12 @@ function renderAll() {
   document.getElementById('kpi-suppliers').textContent = suppliers;
 
   // Update sub
-  const dates = rows.filter(r => r['Date facture']).map(r => r['Date facture']);
-  if (dates.length) {
-    document.getElementById('overview-sub').textContent = `${dates.length} lignes produits · ${invoices} factures`;
+  if (rows.length) {
+    const ds = rows.map(r => parseDate(r['Date facture'])).filter(Boolean).sort((a,b) => a - b);
+    const span = ds.length ? ` · ${fmtDate(ds[0])} → ${fmtDate(ds[ds.length-1])}` : '';
+    document.getElementById('overview-sub').textContent = `${rows.length} lignes produits · ${invoices} factures${span}`;
+  } else {
+    document.getElementById('overview-sub').textContent = 'Aucune donnée sur cette période';
   }
 
   // Categories
@@ -843,10 +940,9 @@ function renderAll() {
   // Monthly chart
   const monthly = {};
   rows.forEach(r => {
-    if (!r['Date facture']) return;
-    const parts = r['Date facture'].split('/');
-    if (parts.length < 3) return;
-    const key = `${parts[2]}-${parts[1].padStart(2,'0')}`;
+    const d = parseDate(r['Date facture']);
+    if (!d) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     monthly[key] = (monthly[key] || 0) + parseNum(r['Total HT (€)']);
   });
   const sortedMonths = Object.entries(monthly).sort((a,b) => a[0].localeCompare(b[0]));
@@ -883,11 +979,7 @@ function renderProducts() {
 
   // Build product map: last price and previous price
   const productMap = {};
-  const sortedByDate = [...rows].sort((a,b) => {
-    const pa = (a['Date facture']||'').split('/').reverse().join('');
-    const pb = (b['Date facture']||'').split('/').reverse().join('');
-    return pa.localeCompare(pb);
-  });
+  const sortedByDate = [...rows].sort((a,b) => dateKey(a['Date facture']).localeCompare(dateKey(b['Date facture'])));
 
   sortedByDate.forEach(r => {
     const key = `${r['Produit']}||${r['Fournisseur']}`;
@@ -950,7 +1042,7 @@ function renderProducts() {
         <td class="right accent">${last ? fmtEurDec(last) : '—'}</td>
         <td class="right muted">${prev ? fmtEurDec(prev) : '—'}</td>
         <td class="right">${evoBadge}</td>
-        <td class="right muted">${lastDate}</td>
+        <td class="right muted">${fmtDate(lastDate)}</td>
       </tr>
     `;
   }).join('');
@@ -961,11 +1053,7 @@ function filterProducts() { renderProducts(); }
 function renderAlerts() {
   const rows = getFilteredRows();
   const productMap = {};
-  const sortedByDate = [...rows].sort((a,b) => {
-    const pa = (a['Date facture']||'').split('/').reverse().join('');
-    const pb = (b['Date facture']||'').split('/').reverse().join('');
-    return pa.localeCompare(pb);
-  });
+  const sortedByDate = [...rows].sort((a,b) => dateKey(a['Date facture']).localeCompare(dateKey(b['Date facture'])));
 
   sortedByDate.forEach(r => {
     const key = `${r['Produit']}||${r['Fournisseur']}`;
@@ -1022,7 +1110,7 @@ function renderAlerts() {
         <td class="right muted">${fmtEurDec(m.prev)}</td>
         <td class="right accent">${fmtEurDec(m.last)}</td>
         <td class="right"><span class="badge ${cls}">${sign}${m.pct}%</span></td>
-        <td class="muted">${m.date || '—'}</td>
+        <td class="muted">${fmtDate(m.date)}</td>
       </tr>
     `;
   }).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted);font-family:var(--mono);font-size:11px">Aucun mouvement significatif</td></tr>';
@@ -1092,7 +1180,43 @@ function setPeriod(p, btn) {
   currentPeriod = p;
   document.querySelectorAll('.period-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
+
+  const range = document.getElementById('date-range');
+  if (p === 'custom') {
+    range.classList.add('show');
+    const startEl = document.getElementById('date-start');
+    const endEl = document.getElementById('date-end');
+    // Pré-remplit avec la plage réelle des données si les champs sont vides
+    if (!startEl.value || !endEl.value) {
+      const dates = allRows.map(r => parseDate(r['Date facture'])).filter(Boolean).sort((a,b) => a - b);
+      if (dates.length) {
+        startEl.value = toInputDate(dates[0]);
+        endEl.value = toInputDate(dates[dates.length - 1]);
+      }
+    }
+    applyCustomRange();
+  } else {
+    range.classList.remove('show');
+    renderAll();
+  }
+}
+
+function applyCustomRange() {
+  currentPeriod = 'custom';
+  const sv = document.getElementById('date-start').value;
+  const ev = document.getElementById('date-end').value;
+  customStart = sv ? new Date(sv + 'T00:00:00') : null;
+  customEnd = ev ? new Date(ev + 'T23:59:59') : null;
   renderAll();
+}
+
+function resetCustomRange() {
+  const dates = allRows.map(r => parseDate(r['Date facture'])).filter(Boolean).sort((a,b) => a - b);
+  if (dates.length) {
+    document.getElementById('date-start').value = toInputDate(dates[0]);
+    document.getElementById('date-end').value = toInputDate(dates[dates.length - 1]);
+  }
+  applyCustomRange();
 }
 
 loadData();
